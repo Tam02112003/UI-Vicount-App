@@ -11,7 +11,7 @@ import type {
   CreateExpenseRequest,
 } from '../types';
 
-const API_BASE_URL = 'http://localhost:3000/api/v1';
+const API_BASE_URL = 'http://localhost:8686/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
