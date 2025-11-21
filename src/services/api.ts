@@ -84,25 +84,21 @@ export const authAPI = {
       throw new Error('Phản hồi từ server không hợp lệ');
     }
     
-    const tokenPayload = decodeToken(responseData.token);
-    
-    if (!tokenPayload?.sub) {
-      throw new Error('Token không hợp lệ');
-    }
-    
     let user: User;
     
     try {
-      const userRes = await api.get<ResponseMeta<UserResponseDTO>>(`/users/${tokenPayload.sub}`, {
+      // Use /users/me endpoint instead
+      const userRes = await api.get<ResponseMeta<UserResponseDTO>>('/users/me', {
         headers: { Authorization: `Bearer ${responseData.token}` }
       });
       user = mapUserDTOToUser(extractData(userRes.data));
     } catch (error) {
       console.error('Error fetching user data:', error);
       
-      // Fallback
+      // Fallback: create user from registration data
+      const tokenPayload = decodeToken(responseData.token);
       user = {
-        _id: tokenPayload.sub,
+        _id: tokenPayload?.sub || 'unknown',
         name: data.name,
         email: data.email,
         currency: data.currency,
@@ -123,14 +119,9 @@ export const authAPI = {
       throw new Error('Phản hồi từ server không hợp lệ');
     }
     
-    const tokenPayload = decodeToken(responseData.token);
-    
-    if (!tokenPayload?.sub) {
-      throw new Error('Token không hợp lệ');
-    }
-    
     try {
-      const userRes = await api.get<ResponseMeta<UserResponseDTO>>(`/users/${tokenPayload.sub}`, {
+      // Use /users/me endpoint instead
+      const userRes = await api.get<ResponseMeta<UserResponseDTO>>('/users/me', {
         headers: { Authorization: `Bearer ${responseData.token}` }
       });
       const user = mapUserDTOToUser(extractData(userRes.data));
