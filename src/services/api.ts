@@ -32,10 +32,16 @@ api.interceptors.request.use((config) => {
 // Auth API
 export const authAPI = {
   register: (data: CreateUserRequest): Promise<AuthResponse> =>
-    api.post('/users/register', data).then(res => res.data),
+    api.post('/users/register', data).then(res => {
+      console.log('Register response:', res.data);
+      return res.data;
+    }),
   
   login: (data: LoginRequest): Promise<AuthResponse> =>
-    api.post('/users/login', data).then(res => res.data),
+    api.post('/users/login', data).then(res => {
+      console.log('Login response:', res.data);
+      return res.data;
+    }),
 };
 
 // Groups API

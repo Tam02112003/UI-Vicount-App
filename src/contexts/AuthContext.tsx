@@ -38,10 +38,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const login = (newToken: string, newUser: User) => {
+    console.log('AuthContext login called with:', { token: newToken, user: newUser });
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
+    console.log('AuthContext state updated:', { token: newToken, user: newUser });
   };
 
   const logout = () => {

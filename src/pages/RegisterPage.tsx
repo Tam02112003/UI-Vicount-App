@@ -39,10 +39,22 @@ const RegisterPage: React.FC = () => {
     setError('');
     
     try {
+      console.log('Attempting register with:', data);
       const response = await authAPI.register(data);
+      console.log('Register successful, response:', response);
+      
+      // Kiểm tra cấu trúc response
+      if (!response.token || !response.user) {
+        console.error('Invalid response structure:', response);
+        setError('Phản hồi từ server không hợp lệ');
+        return;
+      }
+      
       login(response.token, response.user);
+      console.log('Auth context updated, navigating to home...');
       navigate('/');
     } catch (err: any) {
+      console.error('Register error:', err);
       setError(err.response?.data?.message || 'Đăng ký thất bại');
     } finally {
       setLoading(false);
