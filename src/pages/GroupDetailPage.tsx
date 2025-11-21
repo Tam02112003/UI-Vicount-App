@@ -29,22 +29,59 @@ const GroupDetailPage: React.FC = () => {
     if (!id) return;
 
     try {
-      const [groupData, expensesData, debtsData] = await Promise.all([
+      // Load group, expenses, and debts
+      const [groupData, expensesData] = await Promise.all([
         groupsAPI.getById(id),
         expensesAPI.getByGroup(id),
-        debtsAPI.getByGroup(id),
       ]);
 
       setGroup(groupData);
       setExpenses(expensesData);
-      setDebts(debtsData);
 
-      // Load member details
-      const memberPromises = groupData.memberIds.map(memberId => 
-        usersAPI.getById(memberId)
-      );
-      const membersData = await Promise.all(memberPromises);
-      setMembers(membersData);
+      // Load debts with error handling
+      try {
+        const debtsData = await debtsAPI.getByGroup(id);
+        setDebts(debtsData);
+      } catch (debtError) {
+        console.warn('Could not load debts:', debtError);
+        setDebts([]);
+      }
+
+      // Load member details with better error handling
+      if (groupData.memberIds && groupData.memberIds.length > 0) {
+        const memberPromises = groupData.memberIds.map(async (memberIdOrObject) => {
+          try {
+            // Check if it's already an object or a string ID
+            if (typeof memberIdOrObject === 'string') {
+              // It's a string ID, fetch the user
+              return await usersAPI.getById(memberIdOrObject);
+            } else if (typeof memberIdOrObject === 'object' && memberIdOrObject !== null) {
+              // It's already a user object, normalize it
+              const obj = memberIdOrObject as any;
+              if (obj._id) {
+                return {
+                  _id: typeof obj._id === 'string' ? obj._id : obj._id.$oid || String(obj._id),
+                  name: obj.name || 'Unknown',
+                  email: obj.email || '',
+                  currency: obj.currency || 'VND',
+                  avatarUrl: obj.avatar_url || obj.avatarUrl,
+                  createdAt: obj.createdAt || new Date().toISOString(),
+                  updatedAt: obj.updatedAt || new Date().toISOString(),
+                } as User;
+              }
+            }
+            
+            console.error('Invalid member format:', memberIdOrObject);
+            return null;
+          } catch (error) {
+            console.error('Error fetching member:', memberIdOrObject, error);
+            return null;
+          }
+        });
+        
+        const membersData = (await Promise.all(memberPromises)).filter((m): m is User => m !== null);
+        setMembers(membersData);
+      }
     } catch (error) {
       console.error('Error loading group data:', error);
     } finally {
@@ -124,23 +161,29 @@ const GroupDetailPage: React.FC = () => {
         {/* Members */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Thành viên</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {members.map((member) => (
-              <div key={member._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                  <span className="text-indigo-600 font-medium">
-                    {member.name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-gray-900">
-                    {member.name}
+          {members.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              Không có thành viên nào
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {members.map((member) => (
+                <div key={member._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <span className="text-indigo-600 font-medium">
+                      {member.name.charAt(0).toUpperCase()}
+                    </span>
                   </div>
-                  <div className="text-xs text-gray-500">{member.email}</div>
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {member.name}
+                    </div>
+                    <div className="text-xs text-gray-500">{member.email}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
