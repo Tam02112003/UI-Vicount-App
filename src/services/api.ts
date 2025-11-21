@@ -15,6 +15,9 @@ import type {
   GroupResponseDTO,
   ExpenseResponseDTO,
   DebtResponseDTO,
+} from '../types';
+
+import {
   mapUserDTOToUser,
   mapGroupDTOToGroup,
   mapExpenseDTOToExpense,
@@ -45,7 +48,7 @@ api.interceptors.request.use((config) => {
 // ============================================================================
 
 const extractData = <T>(response: ResponseMeta<T> | T): T => {
-  if (isResponseMeta(response)) {
+  if (isResponseMeta<T>(response)) {
     return response.data;
   }
   return response;
