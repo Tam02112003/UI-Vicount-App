@@ -34,13 +34,17 @@ export const authAPI = {
   register: (data: CreateUserRequest): Promise<AuthResponse> =>
     api.post('/users/register', data).then(res => {
       console.log('Register response:', res.data);
-      return res.data;
+      // Extract data from the wrapper
+      const responseData = res.data.data || res.data;
+      return responseData;
     }),
   
   login: (data: LoginRequest): Promise<AuthResponse> =>
     api.post('/users/login', data).then(res => {
       console.log('Login response:', res.data);
-      return res.data;
+      // Extract data from the wrapper
+      const responseData = res.data.data || res.data;
+      return responseData;
     }),
 };
 
