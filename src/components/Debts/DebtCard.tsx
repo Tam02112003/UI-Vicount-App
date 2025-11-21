@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import Button from '../UI/Button';
-import { debtsAPI } from '../../services/api';
+import { debtsAPI } from '../../services/debts';
 import type { Debt } from '../../types';
 
 interface DebtCardProps {

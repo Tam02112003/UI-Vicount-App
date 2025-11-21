@@ -5,7 +5,8 @@ import * as yup from 'yup';
 import Modal from '../UI/Modal';
 import Input from '../UI/Input';
 import Button from '../UI/Button';
-import { groupsAPI, usersAPI } from '../../services/api';
+import { groupsAPI } from '../../services/groups';
+import { usersAPI } from '../../services/users';
 import type { CreateGroupRequest, User } from '../../types';
 
 const schema = yup.object({

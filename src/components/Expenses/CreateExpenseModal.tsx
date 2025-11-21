@@ -5,7 +5,7 @@ import * as yup from 'yup';
 import Modal from '../UI/Modal';
 import Input from '../UI/Input';
 import Button from '../UI/Button';
-import { expensesAPI } from '../../services/api';
+import { expensesAPI } from '../../services/expenses';
 import { useAuth } from '../../contexts/AuthContext';
 import type { CreateExpenseRequest, User } from '../../types';
 

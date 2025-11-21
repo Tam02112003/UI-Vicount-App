@@ -1,11 +1,15 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider } from './context/AuthContext'; // Corrected import path
 import ProtectedRoute from './components/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
 import GroupDetailPage from './pages/GroupDetailPage';
+import CreateGroupPage from './pages/CreateGroupPage';
+import ProfilePage from './pages/ProfilePage';
+import NotificationsPage from './pages/NotificationsPage';
+import TransactionHistoryPage from './pages/TransactionHistoryPage'; // New import
 
 function App() {
   return (
@@ -23,10 +27,42 @@ function App() {
             }
           />
           <Route
+            path="/groups/new"
+            element={
+              <ProtectedRoute>
+                <CreateGroupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/groups/:id"
             element={
               <ProtectedRoute>
                 <GroupDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <NotificationsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transactions" // New route for transaction history
+            element={
+              <ProtectedRoute>
+                <TransactionHistoryPage />
               </ProtectedRoute>
             }
           />

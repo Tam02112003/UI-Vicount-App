@@ -1,212 +1,65 @@
 import axios from 'axios';
-import type {
-  User,
-  Group,
-  Expense,
-  Debt,
-  AuthResponse,
-  CreateGroupRequest,
-  CreateUserRequest,
-  LoginRequest,
-  CreateExpenseRequest,
-  ResponseMeta,
-  LoginResponseDTO,
-  UserResponseDTO,
-  GroupResponseDTO,
-  ExpenseResponseDTO,
-  DebtResponseDTO,
-} from '../types';
-
-import {
-  mapUserDTOToUser,
-  mapGroupDTOToGroup,
-  mapExpenseDTOToExpense,
-  mapDebtDTOToDebt,
-  isResponseMeta,
-} from '../types';
-
-const API_BASE_URL = 'http://localhost:8686/api/v1';
+import { usersAPI } from './users'; // Import usersAPI for refreshToken
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: 'http://localhost:8686/api/v1', // Assuming the backend runs on port 8080
 });
 
-// Add auth token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// To avoid circular dependency with AuthContext, we'll store auth functions here.
+let authService: { login: (accessToken: string, refreshToken: string) => Promise<void>; logout: () => void } | null = null;
+
+export const setAuthService = (service: { login: (accessToken: string, refreshToken: string) => Promise<void>; logout: () => void }) => {
+  authService = service;
+};
+
+// Request interceptor to add the auth token to headers
+api.interceptors.request.use(
+  (config) => {
+    const accessToken = localStorage.getItem('accessToken');
+    if (accessToken) {
+      config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
-// ============================================================================
-// Helper Functions
-// ============================================================================
+// Response interceptor to handle token refresh
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
 
-const extractData = <T>(response: ResponseMeta<T> | T): T => {
-  if (isResponseMeta<T>(response)) {
-    return response.data;
+    // If error status is 401 and not already retrying
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true; // Mark as retried
+      const refreshToken = localStorage.getItem('refreshToken');
+
+      if (refreshToken && authService) {
+        try {
+          const newTokens = await usersAPI.refreshToken(refreshToken);
+          localStorage.setItem('accessToken', newTokens.accessToken);
+          localStorage.setItem('refreshToken', newTokens.refreshToken);
+          
+          // Update the Authorization header for the original request
+          api.defaults.headers.common['Authorization'] = `Bearer ${newTokens.accessToken}`;
+          originalRequest.headers['Authorization'] = `Bearer ${newTokens.accessToken}`;
+
+          // Retry the original request
+          return api(originalRequest);
+        } catch (refreshError) {
+          console.error('Token refresh failed:', refreshError);
+          authService.logout(); // Logout user on refresh failure
+          return Promise.reject(refreshError);
+        }
+      } else if (authService) {
+        authService.logout(); // No refresh token available, logout
+      }
+    }
+    return Promise.reject(error);
   }
-  return response;
-};
+);
 
-const decodeToken = (token: string): any => {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('Error decoding token:', error);
-    return null;
-  }
-};
-
-// ============================================================================
-// Auth API
-// ============================================================================
-
-export const authAPI = {
-  register: async (data: CreateUserRequest): Promise<AuthResponse> => {
-    const res = await api.post<ResponseMeta<LoginResponseDTO>>('/users/register', data);
-    const responseData = extractData(res.data);
-    
-    if (!responseData.token) {
-      throw new Error('Phản hồi từ server không hợp lệ');
-    }
-    
-    let user: User;
-    
-    try {
-      // Use /users/me endpoint instead
-      const userRes = await api.get<ResponseMeta<UserResponseDTO>>('/users/me', {
-        headers: { Authorization: `Bearer ${responseData.token}` }
-      });
-      user = mapUserDTOToUser(extractData(userRes.data));
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-      
-      // Fallback: create user from registration data
-      const tokenPayload = decodeToken(responseData.token);
-      user = {
-        _id: tokenPayload?.sub || 'unknown',
-        name: data.name,
-        email: data.email,
-        currency: data.currency,
-        avatarUrl: data.avatarUrl,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }
-    
-    return { token: responseData.token, user };
-  },
-  
-  login: async (data: LoginRequest): Promise<AuthResponse> => {
-    const res = await api.post<ResponseMeta<LoginResponseDTO>>('/users/login', data);
-    const responseData = extractData(res.data);
-    
-    if (!responseData.token) {
-      throw new Error('Phản hồi từ server không hợp lệ');
-    }
-    
-    try {
-      // Use /users/me endpoint instead
-      const userRes = await api.get<ResponseMeta<UserResponseDTO>>('/users/me', {
-        headers: { Authorization: `Bearer ${responseData.token}` }
-      });
-      const user = mapUserDTOToUser(extractData(userRes.data));
-      
-      return { token: responseData.token, user };
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-      throw new Error('Không thể lấy thông tin người dùng');
-    }
-  },
-};
-
-// ============================================================================
-// Groups API
-// ============================================================================
-
-export const groupsAPI = {
-  create: async (data: CreateGroupRequest): Promise<Group> => {
-    const res = await api.post<ResponseMeta<GroupResponseDTO>>('/groups', data);
-    return mapGroupDTOToGroup(extractData(res.data));
-  },
-  
-  getAll: async (): Promise<Group[]> => {
-    const res = await api.get<ResponseMeta<GroupResponseDTO[]>>('/groups');
-    const groups = extractData(res.data);
-    return Array.isArray(groups) ? groups.map(mapGroupDTOToGroup) : [];
-  },
-  
-  getById: async (id: string): Promise<Group> => {
-    const res = await api.get<ResponseMeta<GroupResponseDTO>>(`/groups/${id}`);
-    return mapGroupDTOToGroup(extractData(res.data));
-  },
-  
-  update: async (id: string, data: Partial<CreateGroupRequest>): Promise<Group> => {
-    const res = await api.put<ResponseMeta<GroupResponseDTO>>(`/groups/${id}`, data);
-    return mapGroupDTOToGroup(extractData(res.data));
-  },
-};
-
-// ============================================================================
-// Expenses API
-// ============================================================================
-
-export const expensesAPI = {
-  create: async (data: CreateExpenseRequest): Promise<Expense> => {
-    const res = await api.post<ResponseMeta<ExpenseResponseDTO>>('/expenses', data);
-    return mapExpenseDTOToExpense(extractData(res.data));
-  },
-  
-  getByGroup: async (groupId: string): Promise<Expense[]> => {
-    const res = await api.get<ResponseMeta<ExpenseResponseDTO[]>>(`/expenses?groupId=${groupId}`);
-    const expenses = extractData(res.data);
-    return Array.isArray(expenses) ? expenses.map(mapExpenseDTOToExpense) : [];
-  },
-};
-
-// ============================================================================
-// Debts API
-// ============================================================================
-
-export const debtsAPI = {
-  getByGroup: async (groupId: string): Promise<Debt[]> => {
-    const res = await api.get<ResponseMeta<DebtResponseDTO[]>>(`/debts?groupId=${groupId}`);
-    const debts = extractData(res.data);
-    return Array.isArray(debts) ? debts.map(mapDebtDTOToDebt) : [];
-  },
-  
-  markPaid: async (debtId: string): Promise<void> => {
-    await api.post<ResponseMeta<void>>(`/debts/${debtId}/pay`);
-  },
-};
-
-// ============================================================================
-// Users API
-// ============================================================================
-
-export const usersAPI = {
-  getAll: async (): Promise<User[]> => {
-    const res = await api.get<ResponseMeta<UserResponseDTO[]>>('/users');
-    const users = extractData(res.data);
-    return Array.isArray(users) ? users.map(mapUserDTOToUser) : [];
-  },
-  
-  getById: async (id: string): Promise<User> => {
-    const res = await api.get<ResponseMeta<UserResponseDTO>>(`/users/${id}`);
-    return mapUserDTOToUser(extractData(res.data));
-  },
-};
+export default api;

@@ -53,6 +53,30 @@ export interface Debt {
   updatedAt: string;
 }
 
+export interface Notification {
+  id: string;
+  userId: string;
+  message: string;
+  read: boolean;
+  type: 'INVITE' | 'EXPENSE' | 'DEBT' | 'GROUP'; // Example types
+  entityId: string; // ID of the related entity (e.g., groupId, expenseId)
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TransactionLog {
+  id: string;
+  userId: string;
+  groupId?: string;
+  expenseId?: string;
+  debtId?: string;
+  type: 'EXPENSE_CREATED' | 'DEBT_PAID' | 'GROUP_JOINED' | 'INVITE_ACCEPTED' | 'USER_REGISTERED' | 'USER_UPDATED'; // Example types
+  description: string;
+  amount?: number;
+  currency?: string;
+  createdAt: string;
+}
+
 // ============================================================================
 // Backend DTOs (matching Java Spring Boot responses)
 // ============================================================================
@@ -96,15 +120,16 @@ export interface DebtResponseDTO {
   expenseId?: string;
 }
 
-export interface LoginResponseDTO {
-  token: string;
+export interface LoginResponse {
+  accessToken: string;
+  refreshToken: string;
 }
 
 // ============================================================================
 // Request DTOs
 // ============================================================================
 
-export interface CreateUserRequest {
+export interface RegisterRequest {
   name: string;
   email: string;
   password: string;
@@ -130,9 +155,44 @@ export interface CreateExpenseRequest {
   currency: string;
   description: string;
   participants: string[];
-  date: string;
+  date: string; // ISO string, will be converted to Instant on backend
   category: string;
 }
+
+// Alias for ExpenseRequestDTO (same structure)
+export type ExpenseRequestDTO = CreateExpenseRequest;
+
+export interface UserUpdateRequest {
+  name?: string;
+  avatarUrl?: string;
+  currency?: string;
+}
+
+export interface ChangePasswordRequest {
+  oldPassword: string;
+  newPassword: string;
+}
+
+export enum InviteStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+}
+
+export interface InviteRequestDTO {
+  email: string;
+}
+
+export interface InviteResponseDTO {
+  id: string;
+  groupId: string;
+  email: string;
+  invitedBy: string;
+  status: InviteStatus;
+  createdAt: string;
+  expiresAt: string;
+}
+
 
 // ============================================================================
 // Application Response Types

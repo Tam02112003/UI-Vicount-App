@@ -3,140 +3,151 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
-import { Wallet } from 'lucide-react';
-import Input from '../components/UI/Input';
-import Button from '../components/UI/Button';
-import { authAPI } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
-import type { CreateUserRequest } from '../types';
+import { usersAPI } from '../services/users';
 
-const schema = yup.object({
-  name: yup.string().required('Tên là bắt buộc'),
-  email: yup.string().email('Email không hợp lệ').required('Email là bắt buộc'),
-  password: yup.string().min(6, 'Mật khẩu phải có ít nhất 6 ký tự').required('Mật khẩu là bắt buộc'),
-  currency: yup.string().required('Tiền tệ là bắt buộc'),
+// Define the validation schema using yup
+const schema = yup.object().shape({
+  name: yup.string().required('Name is required'),
+  email: yup.string().email('Invalid email format').required('Email is required'),
+  password: yup.string().min(6, 'Password must be at least 6 characters').required('Password is required'),
+  confirmPassword: yup
+    .string().oneOf([yup.ref('password')], 'Passwords must match').required('Confirm Password is required'),
+  avatarUrl: yup.string().url('Invalid URL format').nullable(true),
+  currency: yup.string().required('Currency is required'),
 });
 
 const RegisterPage: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const [apiError, setApiError] = useState<string | null>(null);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<CreateUserRequest>({
+  const { register, handleSubmit, formState: { errors } } = useForm({
     resolver: yupResolver(schema),
-    defaultValues: {
-      currency: 'VND',
-    },
   });
 
-  const onSubmit = async (data: CreateUserRequest) => {
-    setLoading(true);
-    setError('');
-    
+  const onSubmit = async (data: yup.InferType<typeof schema>) => {
+    setApiError(null); // Clear previous errors
     try {
-      console.log('Attempting register with:', data);
-      const response = await authAPI.register(data);
-      console.log('Register successful, response:', response);
-      
-      // Kiểm tra cấu trúc response
-      if (!response.token || !response.user) {
-        console.error('Invalid response structure:', response);
-        setError('Phản hồi từ server không hợp lệ');
-        return;
+      await usersAPI.register({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        avatarUrl: data.avatarUrl,
+        currency: data.currency,
+      });
+      navigate('/login'); // Redirect to login page after successful registration
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      if (error.response && error.response.data && error.response.data.meta && error.response.data.meta.message) {
+        setApiError(error.response.data.meta.message);
+      } else {
+        setApiError('An unexpected error occurred during registration.');
       }
-      
-      login(response.token, response.user);
-      console.log('Auth context updated, navigating to home...');
-      navigate('/');
-    } catch (err: any) {
-      console.error('Register error:', err);
-      setError(err.response?.data?.message || 'Đăng ký thất bại');
-    } finally {
-      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
-          <Wallet className="h-12 w-12 text-indigo-600" />
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Create a new account
+          </h2>
         </div>
-        <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">
-          Tạo tài khoản Vicount
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Hoặc{' '}
-          <Link
-            to="/login"
-            className="font-medium text-indigo-600 hover:text-indigo-500"
-          >
-            đăng nhập vào tài khoản có sẵn
-          </Link>
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
-
-            <Input
-              label="Họ và tên"
-              {...register('name')}
-              error={errors.name?.message}
-              placeholder="Nguyễn Văn A"
-            />
-
-            <Input
-              label="Email"
-              type="email"
-              {...register('email')}
-              error={errors.email?.message}
-              placeholder="your@email.com"
-            />
-
-            <Input
-              label="Mật khẩu"
-              type="password"
-              {...register('password')}
-              error={errors.password?.message}
-              placeholder="••••••••"
-            />
-
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
+          <div className="rounded-md shadow-sm -space-y-px">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tiền tệ
-              </label>
-              <select
-                {...register('currency')}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="VND">VND (Việt Nam Đồng)</option>
-                <option value="USD">USD (US Dollar)</option>
-              </select>
-              {errors.currency && (
-                <p className="mt-1 text-sm text-red-600">{errors.currency.message}</p>
-              )}
+              <label htmlFor="name" className="sr-only">Name</label>
+              <input
+                id="name"
+                type="text"
+                autoComplete="name"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Full Name"
+                {...register('name')}
+              />
+              {errors.name && <p className="mt-2 text-sm text-red-600">{errors.name.message}</p>}
             </div>
+            <div>
+              <label htmlFor="email-address" className="sr-only">Email address</label>
+              <input
+                id="email-address"
+                type="email"
+                autoComplete="email"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
+                {...register('email')}
+              />
+              {errors.email && <p className="mt-2 text-sm text-red-600">{errors.email.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">Password</label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="new-password"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                {...register('password')}
+              />
+              {errors.password && <p className="mt-2 text-sm text-red-600">{errors.password.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="confirm-password" className="sr-only">Confirm Password</label>
+              <input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Confirm Password"
+                {...register('confirmPassword')}
+              />
+              {errors.confirmPassword && <p className="mt-2 text-sm text-red-600">{errors.confirmPassword.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="avatarUrl" className="sr-only">Avatar URL</label>
+              <input
+                id="avatarUrl"
+                type="url"
+                autoComplete="url"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Avatar URL (Optional)"
+                {...register('avatarUrl')}
+              />
+              {errors.avatarUrl && <p className="mt-2 text-sm text-red-600">{errors.avatarUrl.message}</p>}
+            </div>
+            <div>
+              <label htmlFor="currency" className="sr-only">Currency</label>
+              <input
+                id="currency"
+                type="text"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Preferred Currency (e.g., USD, VND)"
+                {...register('currency')}
+              />
+              {errors.currency && <p className="mt-2 text-sm text-red-600">{errors.currency.message}</p>}
+            </div>
+          </div>
 
-            <Button
+          {apiError && <p className="mt-2 text-sm text-red-600 text-center">{apiError}</p>}
+
+          <div>
+            <button
               type="submit"
-              className="w-full"
-              loading={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              Tạo tài khoản
-            </Button>
-          </form>
+              Register
+            </button>
+          </div>
+        </form>
+        <div className="text-sm text-center">
+          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            Already have an account? Login
+          </Link>
         </div>
       </div>
     </div>

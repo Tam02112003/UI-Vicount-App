@@ -1,274 +1,699 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Plus, Users, Receipt, CreditCard } from 'lucide-react';
-import Layout from '../components/Layout/Layout';
-import Button from '../components/UI/Button';
-import ExpenseCard from '../components/Expenses/ExpenseCard';
-import DebtCard from '../components/Debts/DebtCard';
-import CreateExpenseModal from '../components/Expenses/CreateExpenseModal';
-import { groupsAPI, expensesAPI, debtsAPI, usersAPI } from '../services/api';
-import type { Group, Expense, Debt, User } from '../types';
+import React, { useEffect, useState } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { groupsAPI } from '../services/groups';
+import { expensesAPI } from '../services/expenses';
+import { debtsAPI } from '../services/debts';
+import { usersAPI } from '../services/users';
+import { invitesAPI } from '../services/invites'; // Import invitesAPI
+import { useAuth } from '../context/AuthContext';
+import ExpenseCard from '../components/ExpenseCard'; // Import ExpenseCard
+import CreateExpensePage from './CreateExpensePage'; // Will be used as a modal
+import DebtCard from '../components/DebtCard'; // Import DebtCard
+import type { InviteResponseDTO, Group } from '../types'; // Import InviteResponseDTO and Group
+
+interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  currency: string;
+  payerId: string;
+  participants: string[];
+  date: string;
+  groupId: string;
+}
+
+interface Debt {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: number;
+  currency: string;
+  groupId: string;
+  expenseId?: string;
+}
+
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}
+
 
 const GroupDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth(); // Current logged-in user
+  const navigate = useNavigate();
+
   const [group, setGroup] = useState<Group | null>(null);
-  const [members, setMembers] = useState<User[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'expenses' | 'debts' | 'members' | 'invites'>('expenses');
+
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [debts, setDebts] = useState<Debt[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showCreateExpenseModal, setShowCreateExpenseModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'expenses' | 'debts'>('expenses');
+  const [loadingExpenses, setLoadingExpenses] = useState<boolean>(true);
+  const [expenseError, setExpenseError] = useState<string | null>(null);
+  const [showCreateExpenseModal, setShowCreateExpenseModal] = useState<boolean>(false);
+  const [showEditExpenseModal, setShowEditExpenseModal] = useState<boolean>(false);
+  const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
 
-  useEffect(() => {
-    if (id) {
-      loadGroupData();
-    }
-  }, [id]);
+  const [simplifiedDebts, setSimplifiedDebts] = useState<Debt[]>([]);
+  const [allDebts, setAllDebts] = useState<Debt[]>([]);
+  const [loadingDebts, setLoadingDebts] = useState<boolean>(true);
+  const [debtError, setDebtError] = useState<string | null>(null);
+  const [showAllDebts, setShowAllDebts] = useState<boolean>(false); // Toggle for simplified vs all debts
 
-  const loadGroupData = async () => {
+  const [membersData, setMembersData] = useState<UserProfile[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState<boolean>(true);
+  const [memberError, setMemberError] = useState<string | null>(null);
+
+  const [sentInvites, setSentInvites] = useState<InviteResponseDTO[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState<boolean>(true);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [showSendInviteModal, setShowSendInviteModal] = useState<boolean>(false);
+  const [showEditGroupModal, setShowEditGroupModal] = useState<boolean>(false);
+
+
+  const fetchGroupDetails = async () => {
     if (!id) return;
-
     try {
-      // Load group, expenses, and debts
-      const [groupData, expensesData] = await Promise.all([
-        groupsAPI.getById(id),
-        expensesAPI.getByGroup(id),
-      ]);
-
-      setGroup(groupData);
-      setExpenses(expensesData);
-
-      // Load debts with error handling
-      try {
-        const debtsData = await debtsAPI.getByGroup(id);
-        setDebts(debtsData);
-      } catch (debtError) {
-        console.warn('Could not load debts:', debtError);
-        setDebts([]);
-      }
-
-      // Load member details with better error handling
-      if (groupData.memberIds && groupData.memberIds.length > 0) {
-        const memberPromises = groupData.memberIds.map(async (memberIdOrObject) => {
-          try {
-            // Check if it's already an object or a string ID
-            if (typeof memberIdOrObject === 'string') {
-              // It's a string ID, fetch the user
-              return await usersAPI.getById(memberIdOrObject);
-            } else if (typeof memberIdOrObject === 'object' && memberIdOrObject !== null) {
-              // It's already a user object, normalize it
-              const obj = memberIdOrObject as any;
-              if (obj._id) {
-                return {
-                  _id: typeof obj._id === 'string' ? obj._id : obj._id.$oid || String(obj._id),
-                  name: obj.name || 'Unknown',
-                  email: obj.email || '',
-                  currency: obj.currency || 'VND',
-                  avatarUrl: obj.avatar_url || obj.avatarUrl,
-                  createdAt: obj.createdAt || new Date().toISOString(),
-                  updatedAt: obj.updatedAt || new Date().toISOString(),
-                } as User;
-              }
-            }
-            
-            console.error('Invalid member format:', memberIdOrObject);
-            return null;
-          } catch (error) {
-            console.error('Error fetching member:', memberIdOrObject, error);
-            return null;
-          }
-        });
-        
-        const membersData = (await Promise.all(memberPromises)).filter((m): m is User => m !== null);
-        setMembers(membersData);
-      }
-    } catch (error) {
-      console.error('Error loading group data:', error);
+      const response = await groupsAPI.getById(id);
+      setGroup(response);
+    } catch (err: any) {
+      console.error('Failed to fetch group details:', err);
+      setError(err.response?.data?.meta?.message || 'Failed to load group details.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleExpenseCreated = () => {
-    loadGroupData();
+  const fetchExpenses = async () => {
+    if (!id) return;
+    setLoadingExpenses(true);
+    try {
+      const response = await expensesAPI.getByGroupId(id);
+      // Ensure response is an array
+      if (Array.isArray(response)) {
+        setExpenses(response);
+      } else {
+        console.error('Invalid expenses response:', response);
+        setExpenseError('Invalid expenses data received.');
+        setExpenses([]);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch expenses:', err);
+      setExpenseError(err.response?.data?.meta?.message || err.message || 'Failed to load expenses.');
+      setExpenses([]); // Set empty array on error
+    } finally {
+      setLoadingExpenses(false);
+    }
   };
 
-  const handleDebtPaid = () => {
-    loadGroupData();
+  const fetchDebts = async () => {
+    if (!id) return;
+    setLoadingDebts(true);
+    try {
+      const simplifiedRes = await debtsAPI.getSimplified(id);
+      setSimplifiedDebts(simplifiedRes);
+
+      const allRes = await debtsAPI.getByGroupId(id);
+      setAllDebts(allRes);
+    } catch (err: any) {
+      console.error('Failed to fetch debts:', err);
+      setDebtError(err.response?.data?.meta?.message || 'Failed to load debts.');
+    } finally {
+      setLoadingDebts(false);
+    }
+  };
+
+  const fetchMembersData = async (memberIds: string[]) => {
+    setLoadingMembers(true);
+    try {
+        const memberPromises = memberIds.map(memberId => usersAPI.getById(memberId));
+        const responses = await Promise.all(memberPromises);
+        setMembersData(responses);
+    } catch (err: any) {
+        console.error('Failed to fetch member details:', err);
+        setMemberError(err.response?.data?.meta?.message || 'Failed to load member details.');
+    } finally {
+        setLoadingMembers(false);
+    }
+  };
+
+
+  const fetchSentInvites = async () => {
+    if (!id) return;
+    setLoadingInvites(true);
+    try {
+      // Assuming a backend endpoint to fetch invites sent for a specific group
+      const response = await invitesAPI.getGroupInvites(id); // Need to add this method to invitesAPI
+      setSentInvites(response);
+    } catch (err: any) {
+      console.error('Failed to fetch invites:', err);
+      setInviteError(err.response?.data?.meta?.message || 'Failed to load invites.');
+    } finally {
+      setLoadingInvites(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGroupDetails();
+    fetchExpenses(); // Fetch expenses when component mounts
+    fetchDebts(); // Fetch debts when component mounts
+    fetchSentInvites(); // Fetch invites when component mounts
+  }, [id]);
+
+  useEffect(() => {
+    if (group && group.memberIds && group.memberIds.length > 0) {
+        fetchMembersData(group.memberIds);
+    }
+  }, [group]);
+
+
+  const onCreateExpenseSuccess = () => {
+    setShowCreateExpenseModal(false);
+    fetchExpenses(); // Refresh expenses list
+    fetchDebts(); // Also refresh debts
+  };
+
+  const handleEditExpense = (expenseId: string) => {
+    const expense = expenses.find(exp => exp.id === expenseId);
+    if (expense) {
+      setExpenseToEdit(expense);
+      setShowEditExpenseModal(true);
+    }
+  };
+
+  const handleDeleteExpense = async (expenseId: string) => {
+    if (window.confirm('Are you sure you want to delete this expense?')) {
+      try {
+        await expensesAPI.delete(expenseId);
+        fetchExpenses(); // Refresh the list
+        fetchDebts(); // Also refresh debts
+      } catch (err: any) {
+        console.error('Failed to delete expense:', err);
+        alert(err.response?.data?.meta?.message || 'Failed to delete expense.');
+      }
+    }
+  };
+
+  const handleMarkDebtPaid = async (debtId: string, amount: number, method: string) => {
+    if (window.confirm(`Mark this debt (${amount} ${group?.currency}) as paid via ${method}?`)) {
+      try {
+        await debtsAPI.payDebt(debtId, { amount, method });
+        fetchDebts(); // Refresh debts list
+        alert('Debt marked as paid successfully!');
+      } catch (err: any) {
+        console.error('Failed to mark debt as paid:', err);
+        alert(err.response?.data?.meta?.message || 'Failed to mark debt as paid.');
+      }
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!group?.id || !user?.sub) return;
+    if (window.confirm(`Are you sure you want to remove ${memberId} from the group?`)) {
+        try {
+            // Need to pass actingUserId from headers, but for simplicity, we use the authenticated user
+            await groupsAPI.deleteMember(group._id, memberId, user._id);
+            alert('Member removed successfully.');
+            fetchGroupDetails(); // Refresh group details to update member list
+        } catch (err: any) {
+            console.error('Failed to remove member:', err);
+            alert(err.response?.data?.meta?.message || 'Failed to remove member.');
+        }
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!group?._id || !user?._id) return;
+    if (window.confirm('Are you sure you want to leave this group?')) {
+        try {
+            // Need to pass userId from headers
+            await groupsAPI.leaveGroup(group._id, user._id);
+            alert('You have left the group.');
+            navigate('/'); // Go back to home page
+        } catch (err: any) {
+            console.error('Failed to leave group:', err);
+            alert(err.response?.data?.meta?.message || 'Failed to leave group.');
+        }
+    }
+  };
+
+  const handleEditGroup = () => {
+    setShowEditGroupModal(true);
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!group?._id) return;
+    if (window.confirm(`Are you sure you want to delete the group "${group.name}"? This action cannot be undone.`)) {
+      try {
+        await groupsAPI.delete(group._id);
+        alert('Group deleted successfully.');
+        navigate('/'); // Go back to home page
+      } catch (err: any) {
+        console.error('Failed to delete group:', err);
+        alert(err.response?.data?.meta?.message || 'Failed to delete group.');
+      }
+    }
   };
 
   if (loading) {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
-      </Layout>
-    );
+    return <div className="text-center mt-8">Loading group details...</div>;
+  }
+
+  if (error) {
+    return <div className="text-center mt-8 text-red-600">Error: {error}</div>;
   }
 
   if (!group) {
-    return (
-      <Layout>
-        <div className="text-center py-12">
-          <h2 className="text-xl font-semibold text-gray-900">Không tìm thấy nhóm</h2>
-        </div>
-      </Layout>
-    );
+    return <div className="text-center mt-8 text-gray-600">Group not found.</div>;
   }
 
-  const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  const unpaidDebts = debts.filter(debt => !debt.isPaid);
+  // Owner is typically the first member in the memberIds array
+  const isOwner = user && group.memberIds && group.memberIds.length > 0 && group.memberIds[0] === user._id;
+  const isMember = group.memberIds && group.memberIds.includes(user?._id || '');
+
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        {/* Group Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                {group.name}
-              </h1>
-              <p className="text-gray-600 mb-4">{group.description}</p>
-              <div className="flex items-center space-x-6 text-sm text-gray-500">
-                <div className="flex items-center space-x-1">
-                  <Users className="h-4 w-4" />
-                  <span>{members.length} thành viên</span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <Receipt className="h-4 w-4" />
-                  <span>{expenses.length} chi tiêu</span>
-                </div>
-                <div className="flex items-center space-x-1">
-                  <CreditCard className="h-4 w-4" />
-                  <span>
-                    {new Intl.NumberFormat('vi-VN', {
-                      style: 'currency',
-                      currency: 'VND',
-                    }).format(totalExpenses)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <Button onClick={() => setShowCreateExpenseModal(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Thêm chi tiêu
-            </Button>
-          </div>
-        </div>
-
-        {/* Members */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Thành viên</h2>
-          {members.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              Không có thành viên nào
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {members.map((member) => (
-                <div key={member._id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
-                    <span className="text-indigo-600 font-medium">
-                      {member.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {member.name}
-                    </div>
-                    <div className="text-xs text-gray-500">{member.email}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">{group.name}</h1>
+        <div>
+          <Link to="/" className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded mr-2">
+            Back to Home
+          </Link>
+          {isOwner && (
+            <>
+              <button 
+                onClick={handleEditGroup}
+                className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2"
+              >
+                Edit Group
+              </button>
+              <button 
+                onClick={handleDeleteGroup}
+                className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+              >
+                Delete Group
+              </button>
+            </>
           )}
-        </div>
-
-        {/* Tabs */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="border-b border-gray-200">
-            <nav className="flex space-x-8 px-6">
-              <button
-                onClick={() => setActiveTab('expenses')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'expenses'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Chi tiêu ({expenses.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('debts')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'debts'
-                    ? 'border-indigo-500 text-indigo-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Công nợ ({unpaidDebts.length})
-              </button>
-            </nav>
-          </div>
-
-          <div className="p-6">
-            {activeTab === 'expenses' && (
-              <div className="space-y-4">
-                {expenses.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Receipt className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Chưa có chi tiêu nào
-                    </h3>
-                    <p className="text-gray-500 mb-4">
-                      Thêm chi tiêu đầu tiên cho nhóm này
-                    </p>
-                    <Button onClick={() => setShowCreateExpenseModal(true)}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Thêm chi tiêu
-                    </Button>
-                  </div>
-                ) : (
-                  expenses.map((expense) => (
-                    <ExpenseCard key={expense._id} expense={expense} />
-                  ))
-                )}
-              </div>
-            )}
-
-            {activeTab === 'debts' && (
-              <div className="space-y-4">
-                {debts.length === 0 ? (
-                  <div className="text-center py-8">
-                    <CreditCard className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      Không có công nợ
-                    </h3>
-                    <p className="text-gray-500">
-                      Tất cả các khoản đã được thanh toán
-                    </p>
-                  </div>
-                ) : (
-                  debts.map((debt) => (
-                    <DebtCard key={debt._id} debt={debt} onPaid={handleDebtPaid} />
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          {!isOwner && isMember && (
+             <button
+                onClick={handleLeaveGroup}
+                className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded"
+             >
+                Leave Group
+             </button>
+          )}
         </div>
       </div>
 
-      <CreateExpenseModal
-        isOpen={showCreateExpenseModal}
-        onClose={() => setShowCreateExpenseModal(false)}
-        onSuccess={handleExpenseCreated}
-        groupId={group._id}
-        members={members}
-      />
-    </Layout>
+      <p className="text-gray-700 mb-4">{group.description}</p>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200 mb-4">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          <button
+            onClick={() => setActiveTab('expenses')}
+            className={`${
+              activeTab === 'expenses'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Expenses
+          </button>
+          <button
+            onClick={() => setActiveTab('debts')}
+            className={`${
+              activeTab === 'debts'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Debts
+          </button>
+          <button
+            onClick={() => setActiveTab('members')}
+            className={`${
+              activeTab === 'members'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Members
+          </button>
+          <button
+            onClick={() => setActiveTab('invites')}
+            className={`${
+              activeTab === 'invites'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Invites
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      <div>
+        {activeTab === 'expenses' && (
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">Expenses</h2>
+            <button
+              onClick={() => setShowCreateExpenseModal(true)}
+              className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mb-4"
+            >
+              Add New Expense
+            </button>
+            {loadingExpenses ? (
+              <p>Loading expenses...</p>
+            ) : expenseError ? (
+              <p className="text-red-600">Error loading expenses: {expenseError}</p>
+            ) : expenses.length === 0 ? (
+              <p>No expenses found in this group.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {expenses.map((expense) => (
+                  <ExpenseCard
+                    key={expense.id}
+                    {...expense}
+                    onEdit={handleEditExpense}
+                    onDelete={handleDeleteExpense}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Create Expense Modal */}
+            {showCreateExpenseModal && (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                  <h3 className="text-lg font-bold mb-4">Create New Expense</h3>
+                  <CreateExpensePage
+                    groupId={group._id}
+                    participants={group.memberIds || []} // Pass group memberIds as participants
+                    onSuccess={onCreateExpenseSuccess}
+                    onCancel={() => setShowCreateExpenseModal(false)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Edit Expense Modal (Placeholder) */}
+            {showEditExpenseModal && expenseToEdit && (
+              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                  <h3 className="text-lg font-bold mb-4">Edit Expense</h3>
+                  <p>Edit form for expense {expenseToEdit.id} will go here.</p>
+                  <button onClick={() => setShowEditExpenseModal(false)}>Close</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab === 'debts' && (
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">Debts</h2>
+            <div className="mb-4">
+              <button
+                onClick={() => setShowAllDebts(false)}
+                className={`mr-2 py-2 px-4 rounded ${!showAllDebts ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+              >
+                Simplified Debts
+              </button>
+              <button
+                onClick={() => setShowAllDebts(true)}
+                className={`py-2 px-4 rounded ${showAllDebts ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-800'}`}
+              >
+                All Debts
+              </button>
+            </div>
+
+            {loadingDebts ? (
+              <p>Loading debts...</p>
+            ) : debtError ? (
+              <p className="text-red-600">Error loading debts: {debtError}</p>
+            ) : (
+              (showAllDebts ? allDebts : simplifiedDebts).length === 0 ? (
+                <p>No debts found in this view.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {(showAllDebts ? allDebts : simplifiedDebts).map((debt) => (
+                    <DebtCard
+                      key={debt.id}
+                      {...debt}
+                      isSimplified={!showAllDebts}
+                      onMarkPaid={handleMarkDebtPaid}
+                    />
+                  ))}
+                </div>
+              )
+            )}
+          </div>
+        )}
+        {activeTab === 'members' && <div><h2 className="text-2xl font-semibold mb-4">Members</h2><p>Members list will go here.</p></div>}
+        {activeTab === 'invites' && (
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">Invites</h2>
+            <button
+              onClick={() => setShowSendInviteModal(true)}
+              className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mb-4"
+            >
+              Send Invite
+            </button>
+
+            {loadingInvites ? (
+              <p>Loading invites...</p>
+            ) : inviteError ? (
+              <p className="text-red-600">Error loading invites: {inviteError}</p>
+            ) : sentInvites.length === 0 ? (
+              <p>No invites sent for this group yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {sentInvites.map((invite) => (
+                  <div key={invite.id} className="bg-gray-50 p-3 rounded-lg shadow-sm flex justify-between items-center">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">To: {invite.email}</p>
+                      <p className="text-xs text-gray-500">Status: {invite.status}</p>
+                      {invite.expiresAt && (
+                        <p className="text-xs text-gray-400">Expires: {new Date(invite.expiresAt).toLocaleDateString()}</p>
+                      )}
+                    </div>
+                    {/* Add actions like resend/cancel based on invite.status */}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Send Invite Modal */}
+            {showSendInviteModal && group && (
+              <SendInviteModal
+                isOpen={showSendInviteModal}
+                onClose={() => setShowSendInviteModal(false)}
+                onSuccess={() => {
+                  setShowSendInviteModal(false);
+                  fetchSentInvites(); // Refresh invites list
+                }}
+                groupId={group._id}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Edit Group Modal */}
+        {showEditGroupModal && group && (
+          <EditGroupModal
+            isOpen={showEditGroupModal}
+            onClose={() => setShowEditGroupModal(false)}
+            onSuccess={() => {
+              setShowEditGroupModal(false);
+              fetchGroupDetails(); // Refresh group details
+            }}
+            group={group}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+interface SendInviteModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  groupId: string;
+}
+
+const SendInviteModal: React.FC<SendInviteModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  groupId,
+}) => {
+  const { user } = useAuth(); // Get current user for X-User-Id header
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await invitesAPI.sendInvite(groupId, { email: recipientEmail }, user?._id);
+      onSuccess();
+    } catch (err: any) {
+      console.error('Error sending invite:', err);
+      setError(err.response?.data?.meta?.message || 'Failed to send invite.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className={`fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 ${isOpen ? '' : 'hidden'}`}>
+      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <h3 className="text-lg font-bold mb-4">Send Group Invite</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="recipientEmail" className="block text-sm font-medium text-gray-700 mb-1">
+              Recipient Email
+            </label>
+            <input
+              type="email"
+              id="recipientEmail"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter recipient's email"
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              required
+            />
+          </div>
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+            >
+              {loading ? 'Sending...' : 'Send Invite'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+interface EditGroupModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  group: Group;
+}
+
+const EditGroupModal: React.FC<EditGroupModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  group,
+}) => {
+  const [name, setName] = useState(group.name);
+  const [description, setDescription] = useState(group.description);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Update form when group changes
+  useEffect(() => {
+    if (group) {
+      setName(group.name);
+      setDescription(group.description);
+    }
+  }, [group]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await groupsAPI.update(group._id, {
+        name,
+        description,
+        memberIds: group.memberIds || [],
+      });
+      onSuccess();
+    } catch (err: any) {
+      console.error('Error updating group:', err);
+      setError(err.response?.data?.meta?.message || 'Failed to update group.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className={`fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 ${isOpen ? '' : 'hidden'}`}>
+      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <h3 className="text-lg font-bold mb-4">Edit Group</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="groupName" className="block text-sm font-medium text-gray-700 mb-1">
+              Group Name
+            </label>
+            <input
+              type="text"
+              id="groupName"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter group name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div>
+            <label htmlFor="groupDescription" className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              id="groupDescription"
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              placeholder="Enter group description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </div>
+          {error && <p className="text-red-600 text-sm">{error}</p>}
+          <div className="flex justify-end space-x-3 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50"
+            >
+              {loading ? 'Updating...' : 'Update Group'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 };
 
