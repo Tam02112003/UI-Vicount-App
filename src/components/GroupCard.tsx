@@ -6,9 +6,10 @@ interface GroupCardProps {
   name: string;
   description?: string;
   memberCount: number;
+  onDelete: (id: string) => void;
 }
 
-const GroupCard: React.FC<GroupCardProps> = ({ id, name, description, memberCount }) => {
+const GroupCard: React.FC<GroupCardProps> = ({ id, name, description, memberCount, onDelete }) => {
   return (
     <div className="bg-white shadow-md rounded-lg p-4 mb-4">
       <h2 className="text-xl font-semibold mb-2">
@@ -22,7 +23,10 @@ const GroupCard: React.FC<GroupCardProps> = ({ id, name, description, memberCoun
         <Link to={`/groups/${id}/edit`} className="bg-blue-500 hover:bg-blue-600 text-white text-sm px-3 py-1 rounded">
           Edit
         </Link>
-        <button className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1 rounded">
+        <button
+          onClick={() => onDelete(id)}
+          className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1 rounded"
+        >
           Delete
         </button>
       </div>

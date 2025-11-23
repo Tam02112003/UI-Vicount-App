@@ -12,8 +12,8 @@ export const groupsAPI = {
     }
     return mapGroupDTOToGroup(groupDTO);
   },
-  getAll: async (): Promise<Group[]> => {
-    const response = await api.get('/groups');
+  getAll: async (userId?: string): Promise<Group[]> => {
+    const response = await api.get('/groups', { params: userId ? { userId } : {} });
     // Backend returns ResponseMeta with data containing array of GroupResponseDTO
     const groupsDTO: GroupResponseDTO[] = response.data.data;
     if (!Array.isArray(groupsDTO)) {

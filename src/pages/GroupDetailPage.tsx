@@ -4,33 +4,15 @@ import { groupsAPI } from '../services/groups';
 import { expensesAPI } from '../services/expenses';
 import { debtsAPI } from '../services/debts';
 import { usersAPI } from '../services/users';
-import { invitesAPI } from '../services/invites'; // Import invitesAPI
+import { invitesAPI } from '../services/invites';
 import { useAuth } from '../context/AuthContext';
-import ExpenseCard from '../components/ExpenseCard'; // Import ExpenseCard
-import CreateExpensePage from './CreateExpensePage'; // Will be used as a modal
-import DebtCard from '../components/DebtCard'; // Import DebtCard
-import type { InviteResponseDTO, Group } from '../types'; // Import InviteResponseDTO and Group
+import ExpenseCard from '../components/ExpenseCard';
+import CreateExpensePage from './CreateExpensePage';
+import DebtCard from '../components/DebtCard';
+import PayDebtModal from '../components/Debts/PayDebtModal';
+import type { InviteResponseDTO, Group, ExpenseResponseDTO, DebtResponseDTO } from '../types';
 
-interface Expense {
-  id: string;
-  description: string;
-  amount: number;
-  currency: string;
-  payerId: string;
-  participants: string[];
-  date: string;
-  groupId: string;
-}
-
-interface Debt {
-  id: string;
-  fromUserId: string;
-  toUserId: string;
-  amount: number;
-  currency: string;
-  groupId: string;
-  expenseId?: string;
-}
+import EditExpenseModal from '../components/Expenses/EditExpenseModal';
 
 interface UserProfile {
   id: string;
@@ -39,10 +21,9 @@ interface UserProfile {
   avatarUrl?: string;
 }
 
-
 const GroupDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth(); // Current logged-in user
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [group, setGroup] = useState<Group | null>(null);
@@ -50,18 +31,21 @@ const GroupDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'expenses' | 'debts' | 'members' | 'invites'>('expenses');
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseResponseDTO[]>([]);
   const [loadingExpenses, setLoadingExpenses] = useState<boolean>(true);
   const [expenseError, setExpenseError] = useState<string | null>(null);
   const [showCreateExpenseModal, setShowCreateExpenseModal] = useState<boolean>(false);
   const [showEditExpenseModal, setShowEditExpenseModal] = useState<boolean>(false);
-  const [expenseToEdit, setExpenseToEdit] = useState<Expense | null>(null);
+  const [expenseToEdit, setExpenseToEdit] = useState<ExpenseResponseDTO | null>(null);
 
-  const [simplifiedDebts, setSimplifiedDebts] = useState<Debt[]>([]);
-  const [allDebts, setAllDebts] = useState<Debt[]>([]);
+  const [simplifiedDebts, setSimplifiedDebts] = useState<DebtResponseDTO[]>([]);
+  const [allDebts, setAllDebts] = useState<DebtResponseDTO[]>([]);
   const [loadingDebts, setLoadingDebts] = useState<boolean>(true);
   const [debtError, setDebtError] = useState<string | null>(null);
-  const [showAllDebts, setShowAllDebts] = useState<boolean>(false); // Toggle for simplified vs all debts
+  const [showAllDebts, setShowAllDebts] = useState<boolean>(false);
+  
+  const [isPayDebtModalOpen, setIsPayDebtModalOpen] = useState(false);
+  const [debtToPay, setDebtToPay] = useState<DebtResponseDTO | null>(null);
 
   const [membersData, setMembersData] = useState<UserProfile[]>([]);
   const [loadingMembers, setLoadingMembers] = useState<boolean>(true);
@@ -92,7 +76,6 @@ const GroupDetailPage: React.FC = () => {
     setLoadingExpenses(true);
     try {
       const response = await expensesAPI.getByGroupId(id);
-      // Ensure response is an array
       if (Array.isArray(response)) {
         setExpenses(response);
       } else {
@@ -103,7 +86,7 @@ const GroupDetailPage: React.FC = () => {
     } catch (err: any) {
       console.error('Failed to fetch expenses:', err);
       setExpenseError(err.response?.data?.meta?.message || err.message || 'Failed to load expenses.');
-      setExpenses([]); // Set empty array on error
+      setExpenses([]);
     } finally {
       setLoadingExpenses(false);
     }
@@ -130,8 +113,15 @@ const GroupDetailPage: React.FC = () => {
     setLoadingMembers(true);
     try {
         const memberPromises = memberIds.map(memberId => usersAPI.getById(memberId));
-        const responses = await Promise.all(memberPromises);
-        setMembersData(responses);
+        const userObjects = await Promise.all(memberPromises);
+        const userProfiles: UserProfile[] = userObjects.map(user => ({
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          avatarUrl: user.avatarUrl
+        }));
+        console.log("Fetched membersData:", userProfiles);
+        setMembersData(userProfiles);
     } catch (err: any) {
         console.error('Failed to fetch member details:', err);
         setMemberError(err.response?.data?.meta?.message || 'Failed to load member details.');
@@ -142,11 +132,13 @@ const GroupDetailPage: React.FC = () => {
 
 
   const fetchSentInvites = async () => {
-    if (!id) return;
+    if (!id || !user?._id) {
+      setLoadingInvites(false);
+      return;
+    }
     setLoadingInvites(true);
     try {
-      // Assuming a backend endpoint to fetch invites sent for a specific group
-      const response = await invitesAPI.getGroupInvites(id); // Need to add this method to invitesAPI
+      const response = await invitesAPI.getGroupInvites(id, user._id);
       setSentInvites(response);
     } catch (err: any) {
       console.error('Failed to fetch invites:', err);
@@ -158,9 +150,9 @@ const GroupDetailPage: React.FC = () => {
 
   useEffect(() => {
     fetchGroupDetails();
-    fetchExpenses(); // Fetch expenses when component mounts
-    fetchDebts(); // Fetch debts when component mounts
-    fetchSentInvites(); // Fetch invites when component mounts
+    fetchExpenses();
+    fetchDebts();
+    fetchSentInvites();
   }, [id]);
 
   useEffect(() => {
@@ -172,8 +164,8 @@ const GroupDetailPage: React.FC = () => {
 
   const onCreateExpenseSuccess = () => {
     setShowCreateExpenseModal(false);
-    fetchExpenses(); // Refresh expenses list
-    fetchDebts(); // Also refresh debts
+    fetchExpenses();
+    fetchDebts();
   };
 
   const handleEditExpense = (expenseId: string) => {
@@ -188,8 +180,8 @@ const GroupDetailPage: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
       try {
         await expensesAPI.delete(expenseId);
-        fetchExpenses(); // Refresh the list
-        fetchDebts(); // Also refresh debts
+        fetchExpenses();
+        fetchDebts();
       } catch (err: any) {
         console.error('Failed to delete expense:', err);
         alert(err.response?.data?.meta?.message || 'Failed to delete expense.');
@@ -197,27 +189,29 @@ const GroupDetailPage: React.FC = () => {
     }
   };
 
+  const handleOpenPayDebtModal = (debt: DebtResponseDTO) => {
+    setDebtToPay(debt);
+    setIsPayDebtModalOpen(true);
+  };
+
   const handleMarkDebtPaid = async (debtId: string, amount: number, method: string) => {
-    if (window.confirm(`Mark this debt (${amount} ${group?.currency}) as paid via ${method}?`)) {
-      try {
-        await debtsAPI.payDebt(debtId, { amount, method });
-        fetchDebts(); // Refresh debts list
-        alert('Debt marked as paid successfully!');
-      } catch (err: any) {
-        console.error('Failed to mark debt as paid:', err);
-        alert(err.response?.data?.meta?.message || 'Failed to mark debt as paid.');
-      }
+    try {
+      await debtsAPI.payDebt(debtId, { amount, method });
+      fetchDebts();
+      alert('Debt marked as paid successfully!');
+    } catch (err: any) {
+      console.error('Failed to mark debt as paid:', err);
+      alert(err.response?.data?.meta?.message || 'Failed to mark debt as paid.');
     }
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!group?.id || !user?.sub) return;
+    if (!group?._id || !user?._id) return;
     if (window.confirm(`Are you sure you want to remove ${memberId} from the group?`)) {
         try {
-            // Need to pass actingUserId from headers, but for simplicity, we use the authenticated user
             await groupsAPI.deleteMember(group._id, memberId, user._id);
             alert('Member removed successfully.');
-            fetchGroupDetails(); // Refresh group details to update member list
+            fetchGroupDetails();
         } catch (err: any) {
             console.error('Failed to remove member:', err);
             alert(err.response?.data?.meta?.message || 'Failed to remove member.');
@@ -229,10 +223,9 @@ const GroupDetailPage: React.FC = () => {
     if (!group?._id || !user?._id) return;
     if (window.confirm('Are you sure you want to leave this group?')) {
         try {
-            // Need to pass userId from headers
             await groupsAPI.leaveGroup(group._id, user._id);
             alert('You have left the group.');
-            navigate('/'); // Go back to home page
+            navigate('/');
         } catch (err: any) {
             console.error('Failed to leave group:', err);
             alert(err.response?.data?.meta?.message || 'Failed to leave group.');
@@ -250,12 +243,17 @@ const GroupDetailPage: React.FC = () => {
       try {
         await groupsAPI.delete(group._id);
         alert('Group deleted successfully.');
-        navigate('/'); // Go back to home page
+        navigate('/');
       } catch (err: any) {
         console.error('Failed to delete group:', err);
         alert(err.response?.data?.meta?.message || 'Failed to delete group.');
       }
     }
+  };
+
+  const findMemberName = (memberId: string) => {
+    const member = membersData.find(m => m.id === memberId);
+    return member ? member.name : 'Unknown User';
   };
 
   if (loading) {
@@ -270,7 +268,6 @@ const GroupDetailPage: React.FC = () => {
     return <div className="text-center mt-8 text-gray-600">Group not found.</div>;
   }
 
-  // Owner is typically the first member in the memberIds array
   const isOwner = user && group.memberIds && group.memberIds.length > 0 && group.memberIds[0] === user._id;
   const isMember = group.memberIds && group.memberIds.includes(user?._id || '');
 
@@ -312,7 +309,6 @@ const GroupDetailPage: React.FC = () => {
 
       <p className="text-gray-700 mb-4">{group.description}</p>
 
-      {/* Tabs */}
       <div className="border-b border-gray-200 mb-4">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
           <button
@@ -358,7 +354,6 @@ const GroupDetailPage: React.FC = () => {
         </nav>
       </div>
 
-      {/* Tab Content */}
       <div>
         {activeTab === 'expenses' && (
           <div>
@@ -380,7 +375,7 @@ const GroupDetailPage: React.FC = () => {
                 {expenses.map((expense) => (
                   <ExpenseCard
                     key={expense.id}
-                    {...expense}
+                    expense={expense}
                     onEdit={handleEditExpense}
                     onDelete={handleDeleteExpense}
                   />
@@ -388,14 +383,13 @@ const GroupDetailPage: React.FC = () => {
               </div>
             )}
 
-            {/* Create Expense Modal */}
             {showCreateExpenseModal && (
               <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
                 <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
                   <h3 className="text-lg font-bold mb-4">Create New Expense</h3>
                   <CreateExpensePage
                     groupId={group._id}
-                    participants={group.memberIds || []} // Pass group memberIds as participants
+                    participants={membersData || []}
                     onSuccess={onCreateExpenseSuccess}
                     onCancel={() => setShowCreateExpenseModal(false)}
                   />
@@ -403,15 +397,19 @@ const GroupDetailPage: React.FC = () => {
               </div>
             )}
 
-            {/* Edit Expense Modal (Placeholder) */}
-            {showEditExpenseModal && expenseToEdit && (
-              <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-                  <h3 className="text-lg font-bold mb-4">Edit Expense</h3>
-                  <p>Edit form for expense {expenseToEdit.id} will go here.</p>
-                  <button onClick={() => setShowEditExpenseModal(false)}>Close</button>
-                </div>
-              </div>
+            {showEditExpenseModal && expenseToEdit && group && (
+              <EditExpenseModal
+                isOpen={showEditExpenseModal}
+                onClose={() => setShowEditExpenseModal(false)}
+                onSuccess={() => {
+                  setShowEditExpenseModal(false);
+                  fetchExpenses();
+                  fetchDebts();
+                }}
+                groupId={group._id}
+                members={membersData}
+                expense={expenseToEdit}
+              />
             )}
           </div>
         )}
@@ -447,15 +445,60 @@ const GroupDetailPage: React.FC = () => {
                       key={debt.id}
                       {...debt}
                       isSimplified={!showAllDebts}
-                      onMarkPaid={handleMarkDebtPaid}
+                      fromUserName={findMemberName(debt.fromUserId)}
+                      toUserName={findMemberName(debt.toUserId)}
+                      onOpenPayDebtModal={() => handleOpenPayDebtModal(debt)}
                     />
                   ))}
                 </div>
               )
             )}
+            
+            {isPayDebtModalOpen && debtToPay && (
+              <PayDebtModal
+                isOpen={isPayDebtModalOpen}
+                onClose={() => setIsPayDebtModalOpen(false)}
+                onPay={(amount, method) => {
+                  handleMarkDebtPaid(debtToPay.id, amount, method);
+                  setIsPayDebtModalOpen(false);
+                }}
+                debtAmount={debtToPay.amount}
+                debtCurrency={debtToPay.currency}
+              />
+            )}
           </div>
         )}
-        {activeTab === 'members' && <div><h2 className="text-2xl font-semibold mb-4">Members</h2><p>Members list will go here.</p></div>}
+        {activeTab === 'members' && (
+          <div>
+            <h2 className="text-2xl font-semibold mb-4">Members</h2>
+            {loadingMembers ? (
+              <p>Loading members...</p>
+            ) : memberError ? (
+              <p className="text-red-600">Error loading members: {memberError}</p>
+            ) : membersData.length === 0 ? (
+              <p>No members found in this group.</p>
+            ) : (
+              <div className="space-y-2">
+                {membersData.map((member) => (
+                  <div key={member.id} className="bg-gray-50 p-3 rounded-lg shadow-sm flex justify-between items-center">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{member.name}</p>
+                      <p className="text-xs text-gray-500">{member.email}</p>
+                    </div>
+                    {isOwner && user?._id !== member.id && (
+                      <button
+                        onClick={() => handleRemoveMember(member.id)}
+                        className="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {activeTab === 'invites' && (
           <div>
             <h2 className="text-2xl font-semibold mb-4">Invites</h2>
@@ -483,20 +526,18 @@ const GroupDetailPage: React.FC = () => {
                         <p className="text-xs text-gray-400">Expires: {new Date(invite.expiresAt).toLocaleDateString()}</p>
                       )}
                     </div>
-                    {/* Add actions like resend/cancel based on invite.status */}
                   </div>
                 ))}
               </div>
             )}
 
-            {/* Send Invite Modal */}
             {showSendInviteModal && group && (
               <SendInviteModal
                 isOpen={showSendInviteModal}
                 onClose={() => setShowSendInviteModal(false)}
                 onSuccess={() => {
                   setShowSendInviteModal(false);
-                  fetchSentInvites(); // Refresh invites list
+                  fetchSentInvites();
                 }}
                 groupId={group._id}
               />
@@ -504,14 +545,13 @@ const GroupDetailPage: React.FC = () => {
           </div>
         )}
 
-        {/* Edit Group Modal */}
         {showEditGroupModal && group && (
           <EditGroupModal
             isOpen={showEditGroupModal}
             onClose={() => setShowEditGroupModal(false)}
             onSuccess={() => {
               setShowEditGroupModal(false);
-              fetchGroupDetails(); // Refresh group details
+              fetchGroupDetails();
             }}
             group={group}
           />
@@ -534,7 +574,7 @@ const SendInviteModal: React.FC<SendInviteModalProps> = ({
   onSuccess,
   groupId,
 }) => {
-  const { user } = useAuth(); // Get current user for X-User-Id header
+  const { user } = useAuth();
   const [recipientEmail, setRecipientEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -614,7 +654,6 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Update form when group changes
   useEffect(() => {
     if (group) {
       setName(group.name);
@@ -633,9 +672,7 @@ const EditGroupModal: React.FC<EditGroupModalProps> = ({
         memberIds: group.memberIds || [],
       });
       onSuccess();
-    } catch (err: any) {
-      console.error('Error updating group:', err);
-      setError(err.response?.data?.meta?.message || 'Failed to update group.');
+          } catch (err: any) {      console.error('Error updating group:', err);      setError(err.response?.data?.meta?.message || 'Failed to update group.');
     } finally {
       setLoading(false);
     }

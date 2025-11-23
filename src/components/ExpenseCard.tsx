@@ -1,37 +1,27 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { ExpenseResponseDTO } from '../types';
 
 interface ExpenseCardProps {
-  id: string;
-  description: string;
-  amount: number;
-  currency: string;
-  payerId: string; // Will need to fetch payer's name
-  participants: string[]; // Will need to fetch participant names
-  date: string;
+  expense: ExpenseResponseDTO;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
 const ExpenseCard: React.FC<ExpenseCardProps> = ({
-  id,
-  description,
-  amount,
-  currency,
-  payerId,
-  participants,
-  date,
+  expense,
   onEdit,
   onDelete,
 }) => {
+  const { id, description, amount, currency, payer, participantsDetails, date } = expense;
+
   return (
     <div className="bg-white shadow-md rounded-lg p-4 mb-4">
       <h3 className="text-lg font-semibold">{description}</h3>
       <p className="text-gray-700">
         Amount: {amount} {currency}
       </p>
-      <p className="text-gray-600 text-sm">Paid by: {payerId}</p> {/* Replace with payer's name */}
-      <p className="text-gray-600 text-sm">Participants: {participants.length}</p> {/* Replace with participant names */}
+      <p className="text-gray-600 text-sm">Paid by: {payer.name}</p>
+      <p className="text-gray-600 text-sm">Participants: {participantsDetails.length}</p>
       <p className="text-gray-600 text-sm">Date: {new Date(date).toLocaleDateString()}</p>
 
       <div className="mt-4 flex space-x-2">

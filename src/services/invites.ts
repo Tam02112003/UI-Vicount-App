@@ -19,8 +19,13 @@ export const invitesAPI = {
   },
 
 
-  getGroupInvites: async (groupId: string): Promise<InviteResponseDTO[]> => {
-    const response = await api.get(`/groups/${groupId}/invites`);
+  getGroupInvites: async (groupId: string, userId?: string): Promise<InviteResponseDTO[]> => {
+    const config = userId ? {
+      headers: {
+        'X-User-Id': userId
+      }
+    } : undefined;
+    const response = await api.get(`/groups/${groupId}/invites`, config);
     // Backend returns ResponseMeta with data containing array of InviteResponseDTO
     const invites: InviteResponseDTO[] = response.data.data;
     if (!Array.isArray(invites)) {
@@ -56,5 +61,14 @@ export const invitesAPI = {
       throw new Error('Invalid invite response: missing invite data');
     }
     return invite;
+  },
+
+  deleteInvite: async (groupId: string, inviteId: string, userId?: string): Promise<void> => {
+    const config = userId ? {
+      headers: {
+        'X-User-Id': userId
+      }
+    } : undefined;
+    await api.delete(`/groups/${groupId}/invites/${inviteId}`, config);
   },
 };

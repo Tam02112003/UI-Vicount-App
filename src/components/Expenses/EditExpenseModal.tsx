@@ -6,13 +6,8 @@ import Modal from '../UI/Modal';
 import Input from '../UI/Input';
 import Button from '../UI/Button';
 import { expensesAPI } from '../../services/expenses';
-import { useAuth } from '../../contexts/AuthContext';
-import type { CreateExpenseRequest, User } from '../../types';
-
-// Helper function to check if a string looks like a MongoDB ObjectId
-const isValidObjectId = (id: string): boolean => {
-  return /^[0-9a-fA-F]{24}$/.test(id);
-};
+import { useAuth } from '../../context/AuthContext';
+import type { ExpenseRequestDTO, SimplifiedUser, ExpenseResponseDTO } from '../../types';
 
 const schema = yup.object({
   amount: yup.number().positive('Số tiền phải lớn hơn 0').required('Số tiền là bắt buộc'),
@@ -22,12 +17,13 @@ const schema = yup.object({
   participants: yup.array().of(yup.string()).min(1, 'Phải có ít nhất 1 người tham gia'),
 });
 
-interface CreateExpenseModalProps {
+interface EditExpenseModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
   groupId: string;
-  members: User[];
+  members: SimplifiedUser[];
+  expense: ExpenseResponseDTO; // The expense object to edit
 }
 
 const categories = [
@@ -40,12 +36,13 @@ const categories = [
   'Other',
 ];
 
-const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
+const EditExpenseModal: React.FC<EditExpenseModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
   groupId,
   members,
+  expense,
 }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -57,12 +54,20 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
     formState: { errors },
     reset,
     setValue,
-  } = useForm<Omit<CreateExpenseRequest, 'groupId' | 'payerId' | 'currency' | 'participants'>>({
+  } = useForm<ExpenseRequestDTO>({
     resolver: yupResolver(schema),
-    defaultValues: {
-      date: new Date().toISOString().split('T')[0],
-    },
   });
+
+  useEffect(() => {
+    // Populate form with existing expense data when modal opens or expense changes
+    if (expense) {
+      setValue('description', expense.description);
+      setValue('amount', expense.amount);
+      setValue('category', expense.category);
+      setValue('date', new Date(expense.date).toISOString().split('T')[0]); // Format date for input type="date"
+      setSelectedParticipants(expense.participantsDetails.map(p => p.id));
+    }
+  }, [expense, setValue]);
 
   useEffect(() => {
     setValue('participants', selectedParticipants);
@@ -73,26 +78,22 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
 
     setLoading(true);
     try {
-      console.log("selectedParticipants before filter:", selectedParticipants);
-      const filteredParticipants = selectedParticipants.filter(isValidObjectId);
-      console.log("selectedParticipants AFTER filter:", filteredParticipants);
-
-      const expenseData: CreateExpenseRequest = {
-        ...data,
+      const expenseData: ExpenseRequestDTO = {
         groupId,
-        payerId: user._id, // This should be a valid ObjectId from the authenticated user
-        currency: user.currency,
-        participants: filteredParticipants, // Use the filtered participants
+        payerId: expense.payer.id,
+        currency: expense.currency,
+        description: data.description,
         amount: Number(data.amount),
+        category: data.category,
         date: new Date(data.date).toISOString(),
+        participants: selectedParticipants,
       };
-      console.log("Expense data sent to API:", expenseData);
 
-      await expensesAPI.create(expenseData);
+      await expensesAPI.update(expense.id, expenseData); // Use update API
       onSuccess();
       handleClose();
     } catch (error) {
-      console.error('Error creating expense:', error);
+      console.error('Error updating expense:', error);
     } finally {
       setLoading(false);
     }
@@ -100,12 +101,11 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
 
   const handleClose = () => {
     reset();
-    setSelectedParticipants([]);
+    setSelectedParticipants([]); // Clear selected participants
     onClose();
   };
 
   const toggleParticipant = (userId: string) => {
-    console.log("toggleParticipant received userId:", userId); // ADD THIS LINE
     setSelectedParticipants(prev =>
       prev.includes(userId)
         ? prev.filter(id => id !== userId)
@@ -114,7 +114,7 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Thêm chi tiêu mới">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Sửa chi tiêu">
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <Input
           label="Mô tả"
@@ -164,22 +164,20 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
             Người tham gia
           </label>
           <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg">
-            {members.map((member) => {
-              console.log("Member _id in map:", member._id, "Name:", member.name, "Email:", member.email); // ADD THIS LINE
-              return (
+            {members.map((member) => (
               <label
-                key={member._id}
+                key={member.id}
                 className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
               >
                 <input
                   type="checkbox"
-                  checked={selectedParticipants.includes(member._id)}
-                  onChange={() => toggleParticipant(member._id)}
+                  checked={selectedParticipants.includes(member.id)}
+                  onChange={() => toggleParticipant(member.id)}
                   className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
                 />
                 <div className="ml-3">
                   <div className="text-sm font-medium text-gray-900">
-                    {member._id}
+                    {member.name}
                   </div>
                   <div className="text-sm text-gray-500">{member.email}</div>
                 </div>
@@ -196,7 +194,7 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
             Hủy
           </Button>
           <Button type="submit" loading={loading}>
-            Thêm chi tiêu
+            Cập nhật chi tiêu
           </Button>
         </div>
       </form>
@@ -204,4 +202,4 @@ const CreateExpenseModal: React.FC<CreateExpenseModalProps> = ({
   );
 };
 
-export default CreateExpenseModal;
+export default EditExpenseModal;

@@ -2,6 +2,12 @@
 // Base Entities
 // ============================================================================
 
+export interface SimplifiedUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export interface User {
   _id: string;
   name: string;
@@ -25,13 +31,11 @@ export interface Group {
 export interface Expense {
   _id: string;
   groupId: string;
-  payerId: string;
-  payer?: User;
+  payer: SimplifiedUser;
   amount: number;
   currency: string;
   description: string;
-  participants: string[];
-  participantUsers?: User[];
+  participants: SimplifiedUser[];
   date: string;
   category: string;
   createdAt: string;
@@ -53,15 +57,13 @@ export interface Debt {
   updatedAt: string;
 }
 
-export interface Notification {
+export interface NotificationResponseDTO {
   id: string;
   userId: string;
   message: string;
-  read: boolean;
-  type: 'INVITE' | 'EXPENSE' | 'DEBT' | 'GROUP'; // Example types
-  entityId: string; // ID of the related entity (e.g., groupId, expenseId)
+  type: string; // e.g., "INVITE_ACCEPTED"
+  readStatus: boolean;
   createdAt: string;
-  updatedAt: string;
 }
 
 export interface TransactionLog {
@@ -100,11 +102,11 @@ export interface GroupResponseDTO {
 export interface ExpenseResponseDTO {
   id: string;
   groupId: string;
-  payerId: string;
+  payer: SimplifiedUser;
   amount: number;
   currency: string;
   description: string;
-  participants: string[];
+  participantsDetails: SimplifiedUser[];
   date: string;
   category: string;
   settled: boolean;
@@ -176,7 +178,6 @@ export interface ChangePasswordRequest {
 export enum InviteStatus {
   PENDING = 'PENDING',
   ACCEPTED = 'ACCEPTED',
-  DECLINED = 'DECLINED',
 }
 
 export interface InviteRequestDTO {
@@ -186,11 +187,14 @@ export interface InviteRequestDTO {
 export interface InviteResponseDTO {
   id: string;
   groupId: string;
+  groupName: string;
   email: string;
   invitedBy: string;
+  invitedByName: string;
   status: InviteStatus;
   createdAt: string;
   expiresAt: string;
+  token: string; // Added token field
 }
 
 
@@ -274,11 +278,11 @@ export const mapGroupDTOToGroup = (dto: GroupResponseDTO): Group => ({
 export const mapExpenseDTOToExpense = (dto: ExpenseResponseDTO): Expense => ({
   _id: dto.id,
   groupId: dto.groupId,
-  payerId: dto.payerId,
+  payer: dto.payer,
   amount: dto.amount,
   currency: dto.currency,
   description: dto.description,
-  participants: dto.participants,
+  participants: dto.participantsDetails,
   date: dto.date,
   category: dto.category,
   createdAt: new Date().toISOString(),

@@ -4,10 +4,11 @@ import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { SimplifiedUser } from '../types';
 
 interface CreateExpensePageProps {
   groupId: string;
-  participants: string[]; // List of member IDs in the group
+  participants: SimplifiedUser[]; // List of member objects
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -34,8 +35,8 @@ const CreateExpensePage: React.FC<CreateExpensePageProps> = ({ groupId, particip
     description: '',
     amount: 0,
     currency: user?.currency || 'USD', // Default to user's currency or USD
-    payerId: user?.sub || (effectiveParticipants.length > 0 ? effectiveParticipants[0] : ''), // Fallback to first participant
-    participantIds: effectiveParticipants, // Default all group members as participants
+    payerId: user?._id || (effectiveParticipants.length > 0 ? effectiveParticipants[0]?.id : ''), // Fallback to first participant
+    participantIds: effectiveParticipants.map(p => p.id), // Default all group members as participants
     date: new Date().toISOString().split('T')[0], // Default to today's date (YYYY-MM-DD)
     category: 'Other',
   };
@@ -125,9 +126,9 @@ const CreateExpensePage: React.FC<CreateExpensePageProps> = ({ groupId, particip
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             {...register('payerId')}
           >
-            {effectiveParticipants.map((pId) => (
-              <option key={pId} value={pId}>
-                {pId} {/* Ideally, fetch user names */}
+            {effectiveParticipants.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.email})
               </option>
             ))}
           </select>
@@ -142,9 +143,9 @@ const CreateExpensePage: React.FC<CreateExpensePageProps> = ({ groupId, particip
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             {...register('participantIds')}
           >
-            {effectiveParticipants.map((pId) => (
-              <option key={pId} value={pId}>
-                {pId} {/* Ideally, fetch user names */}
+            {effectiveParticipants.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} ({p.email})
               </option>
             ))}
           </select>
@@ -196,4 +197,3 @@ const CreateExpensePage: React.FC<CreateExpensePageProps> = ({ groupId, particip
 };
 
 export default CreateExpensePage;
-

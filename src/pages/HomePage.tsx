@@ -12,21 +12,38 @@ const HomePage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchGroups = async () => {
-      try {
-        const response = await groupsAPI.getAll();
-        setGroups(response); // groupsAPI.getAll now returns the data directly
-      } catch (err: any) {
-        console.error('Failed to fetch groups:', err);
-        setError(err.response?.data?.meta?.message || 'Failed to load groups.');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchGroups = async () => {
+    if (!user?._id) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const response = await groupsAPI.getAll(user._id); // Pass user._id to getAll
+      setGroups(response);
+    } catch (err: any) {
+      console.error('Failed to fetch groups:', err);
+      setError(err.response?.data?.meta?.message || 'Failed to load groups.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchGroups();
-  }, []);
+  }, [user]); // Add user as a dependency
+
+  const handleDeleteGroup = async (groupId: string) => {
+    if (window.confirm('Are you sure you want to delete this group?')) {
+      try {
+        await groupsAPI.delete(groupId);
+        alert('Group deleted successfully!');
+        fetchGroups(); // Re-fetch groups after deletion
+      } catch (err: any) {
+        console.error('Failed to delete group:', err);
+        alert(`Error deleting group: ${err.response?.data?.meta?.message || 'Unknown error'}`);
+      }
+    }
+  };
 
   if (loading) {
     return <div className="text-center mt-8">Loading groups...</div>;
@@ -40,19 +57,6 @@ const HomePage: React.FC = () => {
     <div className="container mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Your Groups</h1>
-        <div>
-          {user ? (
-            <span className="mr-4 text-gray-700">Welcome, {user.email}!</span>
-          ) : (
-            <span className="mr-4 text-gray-700">Not logged in</span>
-          )}
-          <button
-            onClick={logout}
-            className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Logout
-          </button>
-        </div>
       </div>
 
       <div className="mb-6">
@@ -75,6 +79,7 @@ const HomePage: React.FC = () => {
               name={group.name}
               description={group.description}
               memberCount={group.memberIds ? group.memberIds.length : 0}
+              onDelete={handleDeleteGroup}
             />
           ))}
         </div>

@@ -2,19 +2,23 @@ import React from 'react';
 import { format } from 'date-fns';
 import { vi } from 'date-fns/locale';
 import { Receipt, Users } from 'lucide-react';
-import type { Expense } from '../../types';
+import type { ExpenseResponseDTO } from '../../types';
 
 interface ExpenseCardProps {
-  expense: Expense;
+  expense: ExpenseResponseDTO;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-const ExpenseCard: React.FC<ExpenseCardProps> = ({ expense }) => {
+const ExpenseCard: React.FC<ExpenseCardProps> = ({ expense, onEdit, onDelete }) => {
   const formatCurrency = (amount: number, currency: string) => {
     return new Intl.NumberFormat('vi-VN', {
       style: 'currency',
       currency: currency === 'VND' ? 'VND' : 'USD',
     }).format(amount);
   };
+
+  const participants = expense.participantsDetails || [];
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -37,7 +41,11 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({ expense }) => {
             </div>
             <div className="flex items-center space-x-1 text-xs text-gray-500">
               <Users className="h-3 w-3" />
-              <span>{expense.participants.length} người tham gia</span>
+              <span title={participants.map(p => p.name).join(', ')}>
+                {participants.length > 2
+                  ? `${participants.slice(0, 2).map(p => p.name).join(', ')} and ${participants.length - 2} more`
+                  : participants.map(p => p.name).join(', ')}
+              </span>
             </div>
           </div>
         </div>
@@ -49,6 +57,10 @@ const ExpenseCard: React.FC<ExpenseCardProps> = ({ expense }) => {
             Trả bởi {expense.payer?.name || 'Unknown'}
           </div>
         </div>
+      </div>
+      <div className="flex justify-end space-x-2 mt-4">
+        <button onClick={() => onEdit(expense.id)} className="text-xs text-blue-600 hover:underline">Edit</button>
+        <button onClick={() => onDelete(expense.id)} className="text-xs text-red-600 hover:underline">Delete</button>
       </div>
     </div>
   );
