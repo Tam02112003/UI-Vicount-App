@@ -2,7 +2,7 @@ import axios from 'axios';
 import { usersAPI } from './users'; // Import usersAPI for refreshToken
 
 const api = axios.create({
-  baseURL: 'http://localhost:8686/api/v1', // Assuming the backend runs on port 8080
+  baseURL: 'https://github.com/Tam02112003/vicount-backend-api/api/v1', // Assuming the backend runs on port 8080
 });
 
 // To avoid circular dependency with AuthContext, we'll store auth functions here.
